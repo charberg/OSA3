@@ -3,6 +3,7 @@
 #include "string.h"
 #include "assert.h"
 #include "unistd.h"
+#include <pthread.h>
 
 FILE* db;	//"Database" file
 
@@ -64,6 +65,70 @@ void printDB(ACCOUNT* arr, int length) {
 
 		printf("%s %s %f\n", arr[i].accNum, arr[i].PIN, arr[i].balance);
 
+	}
+
+}
+
+void *atmInterface() {
+
+	char accountNumber[56];
+	char pin[4];
+	int attempts = 0;
+	int correct = 0;
+
+	while(1) {
+
+		printf("Please enter your 5 digit account number\n");
+		scanf("%s", accountNumber);
+
+		while(correct < 1 && attempts < 3) {
+
+			printf("Please enter your 3 digit PIN\n");
+			scanf("%s", pin);
+
+			//Send message to DB server
+			//if(messageBack -> pin == FALSE)
+			//increment counter
+			//else if (messageBack -> pin == TRUE)
+			// correct = TRUE	
+
+		}
+
+		if(attempts > 2) {
+
+			printf("ACCOUNT LOCKED\n");
+			exit(0);
+
+		}
+
+		//At this point, the correct PIN has been entered for the account number
+	
+		attempts = 0;	//Re-set the number of attempts on the account
+		correct = 0;	//Re-set for next customer
+		int selection = 0;
+
+		printf("Please select an option:\n1. Display funds\n2. Withdraw funds\n");
+		scanf("%d", &selection);
+	
+		switch(selection) {
+
+		case 1:
+			//Request DB Server for funds for accountNumber
+			break;
+	
+		case 2:
+			//Request DB Server for withdrawal for accountNumber
+			//Check if withdraw request is reasonable
+			//If yes, print SUCCESS
+			//If no, print NOPE
+			break;
+	
+		default:
+			printf("Invalid option\n");
+			break;
+
+		}
+	
 	}
 
 }
