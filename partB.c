@@ -36,24 +36,21 @@ ACCOUNT* readDB() {
 		arr = (ACCOUNT*) malloc(sizeof(ACCOUNT));
 		fscanf(db, "%s %s %f", arr->accNum, arr->PIN, &arr->balance);
 	}
-	printf("%s,%s,%f\n", arr->accNum, arr->PIN, arr->balance);
 	int inc;
-	int counter = 0;
+	int counter = 1;
 
 	while(!feof(db)) {
 		ACCOUNT* temp = (ACCOUNT*)malloc(sizeof(ACCOUNT));
 		fscanf(db, "%s %s %f",temp->accNum, temp->PIN, &temp->balance);
 		assert(temp);
-		ACCOUNT* arr = (ACCOUNT*)realloc(arr, sizeof(ACCOUNT)*(counter+1));
-		/*
-		if(t == NULL) {
-			printf("NULL\n");
-		}
-		else {
-			printf("SWEET\n");
+		ACCOUNT* t = (ACCOUNT*)realloc(arr, sizeof(ACCOUNT)*(counter+1));
+		
+		if(t != NULL) {
 			arr = t;
 		}
-		*/
+		
+		arr[counter] = *temp;
+
 		counter++;
 	}
 	fclose(db);
@@ -81,8 +78,7 @@ int main() {
 	fclose(db);
 
 	ACCOUNT* accounts = readDB();
-	if(accounts == NULL) { printf("FUCK\n"); }
-	printDB(accounts, 1);
+	printDB(accounts, 3);
 	
 	return 0;
 }
