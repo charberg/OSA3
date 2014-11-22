@@ -4,6 +4,9 @@
 #include "assert.h"
 #include "unistd.h"
 #include <pthread.h>
+#include <sys/types.h>
+#include <sys/ipc.h>
+#include <sys/msg.h>
 
 FILE* db;	//"Database" file
 
@@ -14,6 +17,13 @@ typedef struct account {
 	float balance;
 
 } ACCOUNT;
+
+typedef struct message {
+
+	long mtype;
+	char mtext[100];
+
+} MESSAGE;
 
 void updateDB(FILE* db, ACCOUNT* accounts, int numAccounts) {
 
@@ -69,12 +79,17 @@ void printDB(ACCOUNT* arr, int length) {
 
 }
 
-void *atmInterface() {
+void * atmInterface(void* a) {
 
 	char accountNumber[56];
 	char pin[4];
 	int attempts = 0;
 	int correct = 0;
+
+	int msqid;
+	int msgflg = IPC_CREAT | 0666;
+	key_t key;
+	MESSAGE mail;
 
 	while(1) {
 
@@ -86,7 +101,30 @@ void *atmInterface() {
 			printf("Please enter your 3 digit PIN\n");
 			scanf("%s", pin);
 
-			//Send message to DB server
+			attempts++;
+	
+			strcpy(mail.mtext,accountNumber);
+			strcat(mail.mtext,pin);
+			mail.mtype = 1;	//1 means Account Number AND PIN
+
+			key = 1111;
+			
+			if((msqid = msgget(key, msgflg)) < 0) {
+				printf("ERROR 1\n");
+				perror("msgget");
+				exit(1);
+			}
+
+			if(msgsnd(msqid, &mail, strlen(mail.mtext) + 1, 0) < 0) {
+
+				printf("ERROR 2\n");
+				perror("msgsnd");
+				exit(1);
+			}	
+
+			//At this point, account number has been sent to other thread
+
+			//Send message tdo DB server
 			//if(messageBack -> pin == FALSE)
 			//increment counter
 			//else if (messageBack -> pin == TRUE)
@@ -133,6 +171,30 @@ void *atmInterface() {
 
 }
 
+void * dbServer(void* a) {
+
+	int msqid;
+	key_t key;
+	MESSAGE mail;
+
+	key = 1111;
+
+	if((msqid = msgget(key, 0666)) < 0) {
+		printf("ERROR 3\n");
+		perror("msgget");
+		exit(1);
+	}
+
+	while(1) {
+
+		msgrcv(msqid, &mail, 100, 1, 0);
+
+		printf("Message type: %ld Contents: %s", mail.mtype, mail.mtext);
+
+	}
+
+}
+
 int main() {
 
 	db = fopen("db.txt","w");
@@ -144,6 +206,15 @@ int main() {
 
 	ACCOUNT* accounts = readDB();
 	printDB(accounts, 3);
+
+	pthread_t atm;
+	pthread_t server;
+
+	pthread_create(&atm, NULL, atmInterface, (void*)NULL);
+	pthread_create(&server, NULL, dbServer, (void*)NULL);
+
+	pthread_join(atm, NULL);
+	pthread_join(server, NULL);
 	
 	return 0;
 }
