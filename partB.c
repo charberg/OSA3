@@ -19,6 +19,7 @@ typedef struct account {
 } ACCOUNT;
 
 ACCOUNT* accounts; //Shared database
+int accCount = 0;	//Number of accounts in database
 
 typedef struct message {
 
@@ -61,21 +62,21 @@ ACCOUNT* readDB() {
 		fscanf(db, "%s %s %f", arr->accNum, arr->PIN, &arr->balance);
 	}
 	int inc;
-	int counter = 1;
+	accCount = 1;
 
 	while(!feof(db)) {
 		ACCOUNT* temp = (ACCOUNT*)malloc(sizeof(ACCOUNT));
 		fscanf(db, "%s %s %f",temp->accNum, temp->PIN, &temp->balance);
 		assert(temp);
-		ACCOUNT* t = (ACCOUNT*)realloc(arr, sizeof(ACCOUNT)*(counter+1));
+		ACCOUNT* t = (ACCOUNT*)realloc(arr, sizeof(ACCOUNT)*(accCount+1));
 		
 		if(t != NULL) {
 			arr = t;
 		}
 		
-		arr[counter] = *temp;
+		arr[accCount] = *temp;
 
-		counter++;
+		accCount++;
 	}
 	fclose(db);
 	return arr;
@@ -114,8 +115,6 @@ void * atmInterface(void* a) {
 			printf("Please enter your 3 digit PIN\n");
 			scanf("%s", pin);
 
-			attempts++;
-	
 			strcpy(mail.mtext,accountNumber);
 			strcat(mail.mtext,pin);
 			mail.mtype = 1;	//1 means Account Number AND PIN
@@ -135,19 +134,38 @@ void * atmInterface(void* a) {
 				exit(1);
 			}	
 
+			printf("Sent\n");
+
 			//At this point, account number has been sent to other thread
 
-			//Send message tdo DB server
+			//Send message to DB server
 			//if(messageBack -> pin == FALSE)
 			//increment counter
 			//else if (messageBack -> pin == TRUE)
 			// correct = TRUE	
+
+			msgrcv(msqid, &mail, 100, 2, 0);
+
+			printf("Interface received %s\n", mail.mtext);
+
+			if(strcmp(mail.mtext, "Y") == 0) {
+
+				correct = 1;	//Means PIN and account number combination were valid
+
+			}
+
+			else {
+				attempts++;
+			}
 
 		}
 
 		if(attempts > 2) {
 
 			printf("ACCOUNT LOCKED\n");
+
+			//Send message to lock account!!
+
 			exit(0);
 
 		}
@@ -192,19 +210,64 @@ void * dbServer(void* a) {
 
 	key = 1111;
 
-	if((msqid = msgget(key, 0666)) < 0) {
-		printf("ERROR 3\n");
+	if((msqid = msgget(key, IPC_CREAT | 0666)) < 0) {
+		printf("ERROR 3 HERE\n");
 		perror("msgget");
 		exit(1);
 	}
 
 	while(1) {
 
+		int check = 0;
+
 		msgrcv(msqid, &mail, 100, 1, 0);
 
 		printf("Message type: %ld Contents: %s", mail.mtype, mail.mtext);
 
+		char accNumber[6];
+		char PIN[4];
 		
+		for(int i = 0; i < 5; i++) {	//Copy in the accNumber and PIN from the message
+
+			accNumber[i] = mail.mtext[i];
+
+		}
+
+		for(int i = 0; i < 3; i++) {
+
+			PIN[i] = mail.mtext[i+5];
+
+		}
+
+		accNumber[5] = '\0';
+		PIN[3] - '\0';	//Terminate the data strings
+
+		for(int i = 0; i < accCount; i++) {
+
+			if(strcmp(accounts[i].accNum, accNumber) == 0 && strcmp(accounts[i].PIN, PIN) == 0) {
+
+				check = 1;	//Confirm that account and PIN are correct	
+
+			}
+
+		}
+
+		if(check == 1) {
+			strcpy(mail.mtext, "Y");
+		}
+
+		else {
+			strcpy(mail.mtext, "N");
+		}
+
+		mail.mtype = 2;	//Set message type to confirmation message
+
+		if(msgsnd(msqid, &mail, strlen(mail.mtext) + 1, 0) < 0) {
+
+			printf("ERROR 2 SEND FROM ACC PIN CHECK\n");
+			perror("msgsnd");
+			exit(1);
+		}		
 
 	}
 
