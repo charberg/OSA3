@@ -18,7 +18,20 @@ typedef struct account {
 
 } ACCOUNT;
 
+ACCOUNT* accounts; //Shared database
+
 typedef struct message {
+
+	/****MESSAGE TYPES
+
+
+	1: AccountNumber + PIN in mtext
+	2: Y/N in mtext
+	3: AccountNumber to be locked
+	4: AccountNumberPIN%Balance, to update database. Note '%' separating balance from rest of info
+
+
+	*****************/
 
 	long mtype;
 	char mtext[100];
@@ -81,7 +94,7 @@ void printDB(ACCOUNT* arr, int length) {
 
 void * atmInterface(void* a) {
 
-	char accountNumber[56];
+	char accountNumber[6];
 	char pin[4];
 	int attempts = 0;
 	int correct = 0;
@@ -191,6 +204,8 @@ void * dbServer(void* a) {
 
 		printf("Message type: %ld Contents: %s", mail.mtype, mail.mtext);
 
+		
+
 	}
 
 }
@@ -204,7 +219,7 @@ int main() {
 	fprintf(db, "00001 107 3443.22\n00011 323 10089.97\n00117 259 112.00");
 	fclose(db);
 
-	ACCOUNT* accounts = readDB();
+	accounts = readDB();
 	printDB(accounts, 3);
 
 	pthread_t atm;
