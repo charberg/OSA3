@@ -29,7 +29,8 @@ typedef struct message {
 	1: AccountNumber + PIN in mtext
 	2: Y/N in mtext
 	3: AccountNumber to be locked
-	4: AccountNumberPIN%Balance, to update database. Note '%' separating balance from rest of info
+	4: Balance requested/sent back
+	5: AccountNumberPIN%Balance, to update database. Note '%' separating balance from rest of info
 
 
 	*****************/
@@ -162,9 +163,25 @@ void * atmInterface(void* a) {
 
 		if(attempts > 2) {
 
-			printf("ACCOUNT LOCKED\n");
+			printf("ATTEMPTING TO LOCK\n");
 
 			//Send message to lock account!!
+
+			mail.mtype = 3;	//Locking message
+			strcpy(mail.mtext, accountNumber);
+
+			if(msgsnd(msqid, &mail, strlen(mail.mtext) + 1, 0) < 0) {
+
+				printf("ERROR 2 SENDING LOCK MESSAGE FAILURE\n");
+				perror("msgsnd");
+				exit(1);
+			}
+
+			printf("CTRL C TO QUIT\n");
+
+			while(1) {
+
+			}
 
 			exit(0);
 
@@ -183,6 +200,9 @@ void * atmInterface(void* a) {
 
 		case 1:
 			//Request DB Server for funds for accountNumber
+
+			
+
 			break;
 	
 		case 2:
@@ -206,9 +226,12 @@ void * dbServer(void* a) {
 
 	int msqid;
 	key_t key;
+	key_t dbkey;
 	MESSAGE mail;
+	int mdbid;
 
 	key = 1111;
+	dbkey = 2222;
 
 	if((msqid = msgget(key, IPC_CREAT | 0666)) < 0) {
 		printf("ERROR 3 HERE\n");
@@ -216,58 +239,130 @@ void * dbServer(void* a) {
 		exit(1);
 	}
 
+
+	if((mdbid = msgget(dbkey, IPC_CREAT | 0666)) < 0) {	//Create db editor message queue
+		printf("ERROR 3 SECOND\n");
+		perror("msgget");
+		exit(1);
+	}
+
 	while(1) {
 
 		int check = 0;
+		mail.mtype = 0;
 
-		msgrcv(msqid, &mail, 100, 1, 0);
+		msgrcv(msqid, &mail, 100, 1, IPC_NOWAIT);
+		msgrcv(msqid, &mail, 100, 3, IPC_NOWAIT);
+		msgrcv(msqid, &mail, 100, 4, IPC_NOWAIT);
 
-		printf("Message type: %ld Contents: %s", mail.mtype, mail.mtext);
+		if(mail.mtype == 1) {	//If received an initial account log in message
 
-		char accNumber[6];
-		char PIN[4];
+			printf("Message type: %ld Contents: %s\n", mail.mtype, mail.mtext);
+
+			char accNumber[6];
+			char PIN[4];
 		
-		for(int i = 0; i < 5; i++) {	//Copy in the accNumber and PIN from the message
+			for(int i = 0; i < 5; i++) {	//Copy in the accNumber and PIN from the message
 
-			accNumber[i] = mail.mtext[i];
+				accNumber[i] = mail.mtext[i];
+
+			}
+
+			for(int i = 0; i < 3; i++) {
+
+				PIN[i] = mail.mtext[i+5];
+
+			}
+
+			accNumber[5] = '\0';
+			PIN[3] - '\0';	//Terminate the data strings
+
+			for(int i = 0; i < accCount; i++) {
+
+				if(strcmp(accounts[i].accNum, accNumber) == 0 && strcmp(accounts[i].PIN, PIN) == 0) {
+
+					check = 1;	//Confirm that account and PIN are correct	
+
+				}
+
+			}
+
+			if(check == 1) {
+				strcpy(mail.mtext, "Y");
+			}
+
+			else {
+				strcpy(mail.mtext, "N");
+			}
+
+			mail.mtype = 2;	//Set message type to confirmation message
+
+			if(msgsnd(msqid, &mail, strlen(mail.mtext) + 1, 0) < 0) {
+
+				printf("ERROR 2 SEND FROM ACC PIN CHECK\n");
+				perror("msgsnd");
+				exit(1);
+			}		
 
 		}
 
-		for(int i = 0; i < 3; i++) {
+		if(mail.mtype == 3) {	//If account needs to be locked
 
-			PIN[i] = mail.mtext[i+5];
+			printf("SERVER RECEIVED LOCK REQUEST\n");
+	
+			//Simply forward message to db editor by changing to mdbid queue
 
-		}
+			if(msgsnd(mdbid, &mail, strlen(mail.mtext) + 1, 0) < 0) {	//Send account number to editor to be locked
 
-		accNumber[5] = '\0';
-		PIN[3] - '\0';	//Terminate the data strings
-
-		for(int i = 0; i < accCount; i++) {
-
-			if(strcmp(accounts[i].accNum, accNumber) == 0 && strcmp(accounts[i].PIN, PIN) == 0) {
-
-				check = 1;	//Confirm that account and PIN are correct	
+				printf("ERROR SENDING TO DB EDITOR\n");
+				perror("msgsnd");
+				exit(1);
 
 			}
 
 		}
 
-		if(check == 1) {
-			strcpy(mail.mtext, "Y");
+	}
+
+}
+
+void *  dbEditor(void* a) {
+
+	key_t dbkey;
+	MESSAGE mail;
+	int mdbid;
+
+	dbkey = 2222;
+
+	if((mdbid = msgget(dbkey, IPC_CREAT | 0666)) < 0) {	//Create db editor message queue
+		printf("ERROR 3 SECOND\n");
+		perror("msgget");
+		exit(1);
+	}
+
+	while(1) {
+
+		mail.mtype = 0;
+
+		msgrcv(mdbid, &mail, 100, 3, IPC_NOWAIT);
+		msgrcv(mdbid, &mail, 100, 4, IPC_NOWAIT);
+	
+		if(mail.mtype == 3) {	//If received account number to be locked
+
+			printf("EDITOR RECEIVED LOCK REQUEST\n");
+
+			for(int i = 0; i < accCount; i++) {
+
+				if(strcmp(accounts[i].accNum, mail.mtext) == 0) {
+
+					accounts[i].accNum[4] = 'X';
+					printf("ACCOUNT LOCKED: %s\n", accounts[i].accNum);
+
+				}
+
+			}
+
 		}
-
-		else {
-			strcpy(mail.mtext, "N");
-		}
-
-		mail.mtype = 2;	//Set message type to confirmation message
-
-		if(msgsnd(msqid, &mail, strlen(mail.mtext) + 1, 0) < 0) {
-
-			printf("ERROR 2 SEND FROM ACC PIN CHECK\n");
-			perror("msgsnd");
-			exit(1);
-		}		
 
 	}
 
@@ -287,12 +382,15 @@ int main() {
 
 	pthread_t atm;
 	pthread_t server;
+	pthread_t editor;
 
 	pthread_create(&atm, NULL, atmInterface, (void*)NULL);
 	pthread_create(&server, NULL, dbServer, (void*)NULL);
+	pthread_create(&editor, NULL, dbEditor, (void*)NULL);
 
 	pthread_join(atm, NULL);
 	pthread_join(server, NULL);
+	pthread_join(editor, NULL);
 	
 	return 0;
 }
