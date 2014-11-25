@@ -30,7 +30,7 @@ typedef struct message {
 	2: Y/N in mtext
 	3: AccountNumber to be locked
 	4: Balance requested/sent back
-	5: AccountNumberPINBalance, to update database after withdrawal
+	5: AccountNumberPINWithdrawal, to update database after withdrawal
 
 
 	*****************/
@@ -223,6 +223,30 @@ void * atmInterface(void* a) {
 			//Check if withdraw request is reasonable
 			//If yes, print SUCCESS
 			//If no, print NOPE
+			//strtof(string, NULL)
+
+			strcpy(mail.mtext, accountNumber);
+			strcat(mail.mtext, pin);
+			char temp[100];
+
+			printf("Please enter withdrawal amount\n");
+			scanf("%s", temp);
+
+			strcat(mail.mtext, temp);	//Add withdrawal amount to message string
+
+			mail.mtype = 5;	//Withdrawal request
+
+			if(msgsnd(msqid, &mail, strlen(mail.mtext) + 1, 0) < 0) {
+
+				printf("ERROR 2 SENDING WITHDRAWAL REQUEST FAILURE\n");
+				perror("msgsnd");
+				exit(1);
+			}		
+	
+			msgrcv(msqid, &mail, 100, 5, 0);	//Wait for confirmation from server
+
+			printf("%s\n", mail.mtext);
+
 			break;
 	
 		default:
@@ -366,6 +390,81 @@ void * dbServer(void* a) {
 			}
 
 		
+
+		}
+		
+		/////////////////////////////////////////////////////////////////////////////////
+
+		if(mail.mtype == 5) {	//If withdrawal request from interface
+
+			//Notify user whether withdrawal is allowed or not
+
+			char accountNumber[6];
+			char PIN[4];
+			char withdrawalString[100];
+			float withdrawal;
+			float balance;
+
+			for(int i = 0; i < 5; i++) {	//Copy in account number
+				accountNumber[i] = mail.mtext[i];
+			}
+
+			for(int i = 0; i < 3; i++) {	//Copy in PIN
+				PIN[i] = mail.mtext[i+5];
+			}
+
+			int i = 8;
+			while(mail.mtext[i] != '\0') {	//Copy in withdrawal amount
+				withdrawalString[i-8] = mail.mtext[i];
+				i++;
+			}
+
+			withdrawalString[i] = '\0';	//Terminate string, as above loop does not
+
+			withdrawal = strtof(withdrawalString, NULL);	//Convert withdrawal string to floar, for balance comparison
+
+			for(int i = 0; i < accCount; i++) {
+
+				if(strcmp(accounts[i].accNum, accountNumber) == 0) {
+
+					balance = accounts[i].balance;	
+
+				}
+
+			}
+
+			//At this point, the balance of the account has been found. Compare to withdrawal, to see if valid request
+
+			if(balance < withdrawal) {
+
+				//Send "NOT ENOUGH FUNDS" back to user
+				strcpy(mail.mtext, "NOT ENOUGH FUNDS");
+
+				if(msgsnd(msqid, &mail, strlen(mail.mtext) + 1, 0) < 0) {	//Send balance to editor to user to be displayed
+
+					printf("ERROR SENDING FAILED WITHDRAWAL RESULT TO USER\n");
+					perror("msgsnd");
+					exit(1);
+
+				}
+
+			}
+
+			else {	//If enough funds, notify user, and update database with new amount
+
+				strcpy(mail.mtext, "ENOUGH FUNDS");
+
+				if(msgsnd(msqid, &mail, strlen(mail.mtext) + 1, 0) < 0) {	//Send balance to editor to user to be displayed
+
+					printf("ERROR SENDING SUCCESSFUL WITHDRAWAL RESULT TO USER\n");
+					perror("msgsnd");
+					exit(1);
+
+				}
+
+				//Now send a message to the DB editor to reflect this withdrawal in the database
+
+			}
 
 		}
 
