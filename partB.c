@@ -30,7 +30,7 @@ typedef struct message {
 	2: Y/N in mtext
 	3: AccountNumber to be locked
 	4: Balance requested/sent back
-	5: AccountNumberPIN%Balance, to update database. Note '%' separating balance from rest of info
+	5: AccountNumberPINBalance, to update database after withdrawal
 
 
 	*****************/
@@ -200,8 +200,21 @@ void * atmInterface(void* a) {
 
 		case 1:
 			//Request DB Server for funds for accountNumber
+			//Message of type 4
 
+			mail.mtype = 4;
+			strcpy(mail.mtext, accountNumber);
+
+			if(msgsnd(msqid, &mail, strlen(mail.mtext) + 1, 0) < 0) {
+
+				printf("ERROR 2 SENDING BALANCE REQUEST FAILURE\n");
+				perror("msgsnd");
+				exit(1);
+			}		
 			
+			msgrcv(msqid, &mail, 100, 4, 0);	//Wait for balance from server
+
+			printf("Account balance: %s\n", mail.mtext);
 
 			break;
 	
@@ -306,6 +319,8 @@ void * dbServer(void* a) {
 
 		}
 
+		///////////////////////////////////////////////////////////////////////////////////
+
 		if(mail.mtype == 3) {	//If account needs to be locked
 
 			printf("SERVER RECEIVED LOCK REQUEST\n");
@@ -319,6 +334,38 @@ void * dbServer(void* a) {
 				exit(1);
 
 			}
+
+		}
+
+		//////////////////////////////////////////////////////////////////////////////////
+
+		if(mail.mtype == 4) {	//If balance is requested
+
+			float foundBalance;
+
+			for(int i = 0; i < accCount; i++) {
+
+				if(strcmp(accounts[i].accNum, mail.mtext) == 0) {
+
+					//If matching account has been found, return balance
+					foundBalance = accounts[i].balance;
+
+				}
+
+			}
+
+			snprintf(mail.mtext, 100, "%f", foundBalance);
+			
+	
+			if(msgsnd(msqid, &mail, strlen(mail.mtext) + 1, 0) < 0) {	//Send balance to editor to user to be displayed
+
+				printf("ERROR SENDING BALANCE TO USER\n");
+				perror("msgsnd");
+				exit(1);
+
+			}
+
+		
 
 		}
 
