@@ -158,8 +158,6 @@ void * atmInterface(void* a) {
 
 			msgrcv(msrid, &mail, 100, 2, 0);
 
-			printf("Interface received %s\n", mail.mtext);
-
 			if(strcmp(mail.mtext, "Y") == 0) {
 
 				correct = 1;	//Means PIN and account number combination were valid
@@ -173,8 +171,6 @@ void * atmInterface(void* a) {
 		}
 
 		if(attempts > 2) {
-
-			printf("ATTEMPTING TO LOCK\n");
 
 			//Send message to lock account!!
 
@@ -246,8 +242,6 @@ void * atmInterface(void* a) {
 
 			mail.mtype = 5;	//Withdrawal request
 
-			printf("Sending withdrawal message\n");
-
 			if(msgsnd(msqid, &mail, strlen(mail.mtext) + 1, 0) < 0) {
 
 				printf("ERROR 2 SENDING WITHDRAWAL REQUEST FAILURE\n");
@@ -256,7 +250,6 @@ void * atmInterface(void* a) {
 			}		
 
 			msgrcv(msrid, &mail, 100, 5, 0);	//Wait for confirmation from server
-			printf("WITHDRAWAL RESULT RECEIVED\n");
 			printf("%s\n", mail.mtext);
 
 			break;
@@ -315,8 +308,6 @@ void * dbServer(void* a) {
 		msgrcv(msqid, &mail, 100, 5, IPC_NOWAIT);
 
 		if(mail.mtype == 1) {	//If received an initial account log in message
-
-			printf("Message type: %ld Contents: %s\n", mail.mtype, mail.mtext);
 
 			char accNumber[6];
 			char PIN[4];
@@ -421,8 +412,6 @@ void * dbServer(void* a) {
 
 			//Notify user whether withdrawal is allowed or not
 
-			printf("WITHDRAWAL REQUEST RECEIVED\n");
-
 			char accountNumber[6];
 			char PIN[4];
 			char withdrawalString[100];
@@ -433,8 +422,8 @@ void * dbServer(void* a) {
 				accountNumber[i] = mail.mtext[i];
 			}
 
-			for(int i = 0; i < 3; i++) {	//Copy in PIN
-				PIN[i] = mail.mtext[i+5];
+			for(int i = 5; i < 8; i++) {	//Copy in PIN
+				PIN[i-5] = mail.mtext[i];
 			}
 
 			int i = 8;
@@ -443,12 +432,10 @@ void * dbServer(void* a) {
 				i++;
 			}
 
-			withdrawalString[i] = '\0';	//Terminate string, as above loop does not
+			withdrawalString[i-8] = '\0';	//Terminate string, as above loop does not
 
 			withdrawal = strtof(withdrawalString, NULL);	//Convert withdrawal string to floar, for balance comparison
 
-			printf("FLOAT: %f\n\n\n", withdrawal);
-	
 			for(int i = 0; i < accCount; i++) {
 
 				if(strcmp(accounts[i].accNum, accountNumber) == 0) {
@@ -466,8 +453,6 @@ void * dbServer(void* a) {
 				//Send "NOT ENOUGH FUNDS" back to user
 				strcpy(mail.mtext, "NOT ENOUGH FUNDS");
 
-				printf("COPIED: %s", mail.mtext);				
-
 				if(msgsnd(msrid, &mail, strlen(mail.mtext) + 1, 0) < 0) {	//Send balance to editor to user to be displayed
 
 					printf("ERROR SENDING FAILED WITHDRAWAL RESULT TO USER\n");
@@ -480,18 +465,6 @@ void * dbServer(void* a) {
 
 			else {	//If enough funds, notify user, and update database with new amount
 
-				strcpy(mail.mtext, "ENOUGH FUNDS");
-
-				if(msgsnd(msrid, &mail, strlen(mail.mtext) + 1, 0) < 0) {	//Send balance to editor to user to be displayed
-
-					printf("ERROR SENDING SUCCESSFUL WITHDRAWAL RESULT TO USER\n");
-					perror("msgsnd");
-					exit(1);
-
-				}
-
-				//Now send a message to the DB editor to reflect this withdrawal in the database
-			
 				strcpy(mail.mtext, accountNumber);	//Copy into message the account info, with the new balance
 				strcat(mail.mtext, PIN);
 
@@ -501,7 +474,7 @@ void * dbServer(void* a) {
 
 				strcat(mail.mtext, newBalance);
 	
-				if(msgsnd(mdbid, &mail, strlen(mail.mtext) + 1, 0) < 0) {	//Send balance to editor to user to be displayed
+				if(msgsnd(mdbid, &mail, strlen(mail.mtext) + 1, 0) < 0) {	//Send balance to to be displayed
 
 					printf("ERROR SENDING ACCOUNT WITHDRAWAL INFO TO EDITOR\n");
 					perror("msgsnd");
@@ -522,10 +495,19 @@ void *  dbEditor(void* a) {
 	key_t dbkey;
 	MESSAGE mail;
 	int mdbid;
-
+	key_t inKey;
+	int msrid;
+	
 	dbkey = 2222;
+	inKey = 3333;
 
 	if((mdbid = msgget(dbkey, IPC_CREAT | 0666)) < 0) {	//Create db editor message queue
+		printf("ERROR 3 SECOND\n");
+		perror("msgget");
+		exit(1);
+	}
+
+	if((msrid = msgget(inKey, IPC_CREAT | 0666)) < 0) {	//Create db editor message queue
 		printf("ERROR 3 SECOND\n");
 		perror("msgget");
 		exit(1);
@@ -539,8 +521,6 @@ void *  dbEditor(void* a) {
 		msgrcv(mdbid, &mail, 100, 5, IPC_NOWAIT);
 	
 		if(mail.mtype == 3) {	//If received account number to be locked
-
-			printf("EDITOR RECEIVED LOCK REQUEST\n");
 
 			for(int i = 0; i < accCount; i++) {
 
@@ -560,8 +540,6 @@ void *  dbEditor(void* a) {
 			char accountNumber[6];
 			char PIN[4];
 			char balanceString[100];
-
-			printf("UPDATING WITHDRAWAL INFO IN DATABASE\n");
 
 			for(int i = 0; i < 5; i++) {	//Copy in account number
 				accountNumber[i] = mail.mtext[i];
@@ -584,6 +562,15 @@ void *  dbEditor(void* a) {
 				if(strcmp(accounts[i].accNum, accountNumber) == 0 && strcmp(accounts[i].PIN, PIN) == 0) {
 					accounts[i].balance = strtof(balanceString, NULL);
 				}
+
+			}
+
+			strcpy(mail.mtext, "SUCCESS\n");
+			if(msgsnd(msrid, &mail, strlen(mail.mtext) + 1, 0) < 0) {	//Send balance confirmation to user to be displayed
+
+				printf("ERROR SENDING SUCCESSFUL WITHDRAWAL RESULT TO USER\n");
+				perror("msgsnd");
+				exit(1);
 
 			}
 
